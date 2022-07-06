@@ -1,0 +1,2 @@
+[all]
+web-server ansible_host=54.154.155.164 ansible_user=ubuntu

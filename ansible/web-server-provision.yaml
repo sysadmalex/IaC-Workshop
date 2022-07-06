@@ -1,0 +1,101 @@
+- hosts: web-server
+  become: true
+
+  vars:
+    ssh_key_filename: id_rsa
+
+  tasks:
+    - name: Update all packages to their latest version
+      ansible.builtin.apt:
+        name: "*"
+        state: latest
+
+    - name: install dependencies
+      apt:
+        pkg:
+          - ca-certificates
+          - software-properties-common
+          - apt-transport-https
+          - curl
+          - gnupg
+          - lsb-release
+          - htop
+          - git
+          - python3-pip
+          - python3-setuptools 
+      
+    - name: Install apt key
+      ansible.builtin.apt_key:
+        url: "https://download.docker.com/linux/ubuntu/gpg"
+        state: present
+        keyring: /etc/apt/trusted.gpg.d/docker.gpg
+
+    - name: Install docker repo
+      apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+        filename: docker
+
+    - name: install docker
+      apt:
+        update_cache: yes
+        pkg:
+          - docker-ce
+
+# install docker-compose 1.26.0 version
+    - name: install docker-compose
+      get_url:
+        url: https://github.com/docker/compose/releases/download/v2.6.0/docker-compose-linux-x86_64
+        dest: /usr/local/bin/docker-compose
+        mode: '775'
+
+    - name: adding existing user "{{ ansible_user }}" to group docker
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+
+    - name: install 'Docker SDK for Python'
+      pip:
+        name:
+          - docker
+          - docker-compose
+
+## Generate SSH Key and read content
+    - name: generate SSH key "{{ssh_key_filename}}"
+      openssh_keypair:
+        path: "~/.ssh/{{ssh_key_filename}}"
+        type: rsa
+        size: 4096
+        state: present
+        force: no
+ 
+    - name: Read id_rsa_myproject
+      ansible.builtin.slurp:
+        src: ~/.ssh/id_rsa.pub
+      register: mounts
+
+    - name: Print returned information
+      ansible.builtin.debug:
+        msg: "{{ mounts['content'] | b64decode }}"
+
+    - name: A helpful reminder of what to look out for post-update
+      ansible.builtin.pause:
+        prompt:  "Be sure to copy the public key to your git repository settings. Don't continue until this is done."
+
+    - name: Clone a github repository
+      git:
+        repo: https://github.com/sysadmalex/Iac-workshop.git 
+        dest: ~/iac-workshop
+        clone: yes
+        update: yes
+
+    - name: Write env files
+      copy:
+        src: ./.env
+        dest: /home/ubuntu/iac-workshop/
+
+    - name: Run `docker-compose up`
+      community.docker.docker_compose:
+        state: present
+        project_src: "/home/ubuntu/iac-workshop/"
